@@ -1,0 +1,41 @@
+# Environment variables - IMPORTANT: Never commit API tokens!
+.env
+
+# Python-generated files
+__pycache__/
+*.py[oc]
+build/
+dist/
+wheels/
+*.egg-info
+
+# Virtual environments
+.venv
+
+# Database files
+*.db
+*.sqlite
+*.sqlite3
+power_data.db
+
+# Log files
+*.log
+collection.log
+
+# IDE and editor files
+.vscode/
+.idea/
+*.swp
+*.swo
+
+# OS generated files
+.DS_Store
+Thumbs.db
+
+# Testing
+.pytest_cache/
+.coverage
+
+# Debug and temporary files
+debug_api.py
+test_auth.py

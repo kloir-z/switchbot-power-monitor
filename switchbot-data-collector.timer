@@ -1,0 +1,11 @@
+[Unit]
+Description=SwitchBot Power Data Collection Timer
+Requires=switchbot-data-collector.service
+
+[Timer]
+OnBootSec=30sec
+OnUnitActiveSec=10sec
+AccuracySec=1sec
+
+[Install]
+WantedBy=timers.target

@@ -1,0 +1,232 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>SwitchBot Power Monitor</title>
+    <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+    <style>
+        body {
+            font-family: Arial, sans-serif;
+            margin: 20px;
+            background-color: #f5f5f5;
+        }
+        .container {
+            max-width: 1200px;
+            margin: 0 auto;
+            background: white;
+            padding: 20px;
+            border-radius: 8px;
+            box-shadow: 0 2px 10px rgba(0,0,0,0.1);
+        }
+        h1 {
+            text-align: center;
+            color: #333;
+            margin-bottom: 30px;
+        }
+        .stats {
+            display: flex;
+            justify-content: space-around;
+            margin-bottom: 30px;
+            flex-wrap: wrap;
+        }
+        .stat-card {
+            background: #007bff;
+            color: white;
+            padding: 20px;
+            border-radius: 8px;
+            text-align: center;
+            min-width: 150px;
+            margin: 10px;
+        }
+        .stat-card h3 {
+            margin: 0 0 10px 0;
+            font-size: 14px;
+        }
+        .stat-card .value {
+            font-size: 24px;
+            font-weight: bold;
+        }
+        .chart-container {
+            position: relative;
+            height: 400px;
+            margin-bottom: 30px;
+        }
+        .controls {
+            text-align: center;
+            margin-bottom: 20px;
+        }
+        button {
+            background: #007bff;
+            color: white;
+            border: none;
+            padding: 10px 20px;
+            border-radius: 4px;
+            cursor: pointer;
+            margin: 0 5px;
+        }
+        button:hover {
+            background: #0056b3;
+        }
+        button.active {
+            background: #28a745;
+        }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <h1>Raspberry Pi 4 電力監視</h1>
+        
+        <div class="stats">
+            <div class="stat-card">
+                <h3>現在の消費電力</h3>
+                <div class="value" id="currentPower">--W</div>
+            </div>
+            <div class="stat-card">
+                <h3>電圧</h3>
+                <div class="value" id="voltage">--V</div>
+            </div>
+            <div class="stat-card">
+                <h3>電流</h3>
+                <div class="value" id="current">--mA</div>
+            </div>
+            <div class="stat-card">
+                <h3>本日の消費電力</h3>
+                <div class="value" id="dailyPower">--Wh</div>
+            </div>
+        </div>
+
+        <div class="controls">
+            <button onclick="setTimeRange(1)" id="btn1h">1時間</button>
+            <button onclick="setTimeRange(6)" id="btn6h">6時間</button>
+            <button onclick="setTimeRange(24)" id="btn24h" class="active">24時間</button>
+            <button onclick="setTimeRange(168)" id="btn1w">1週間</button>
+            <button onclick="refreshData()">更新</button>
+        </div>
+
+        <div class="chart-container">
+            <canvas id="powerChart"></canvas>
+        </div>
+    </div>
+
+    <script>
+        const DEVICE_ID = '48CA43C49E36';
+        let currentTimeRange = 24;
+        let chart = null;
+
+        function initChart() {
+            const ctx = document.getElementById('powerChart').getContext('2d');
+            chart = new Chart(ctx, {
+                type: 'line',
+                data: {
+                    labels: [],
+                    datasets: [{
+                        label: '消費電力 (W)',
+                        data: [],
+                        borderColor: '#007bff',
+                        backgroundColor: 'rgba(0, 123, 255, 0.1)',
+                        borderWidth: 2,
+                        fill: true,
+                        tension: 0.1
+                    }]
+                },
+                options: {
+                    responsive: true,
+                    maintainAspectRatio: false,
+                    plugins: {
+                        title: {
+                            display: true,
+                            text: '電力消費推移'
+                        }
+                    },
+                    scales: {
+                        y: {
+                            beginAtZero: true,
+                            title: {
+                                display: true,
+                                text: '消費電力 (W)'
+                            }
+                        },
+                        x: {
+                            title: {
+                                display: true,
+                                text: '時刻'
+                            }
+                        }
+                    }
+                }
+            });
+        }
+
+        async function fetchCurrentData() {
+            try {
+                const response = await fetch(`/power/current/${DEVICE_ID}`);
+                const data = await response.json();
+                
+                document.getElementById('currentPower').textContent = data.power + 'W';
+                document.getElementById('voltage').textContent = data.voltage + 'V';
+                document.getElementById('current').textContent = data.electric_current + 'mA';
+                document.getElementById('dailyPower').textContent = data.electricity_of_day + 'Wh';
+            } catch (error) {
+                console.error('Error fetching current data:', error);
+            }
+        }
+
+        async function fetchHistoryData() {
+            try {
+                const response = await fetch(`/power/history/${DEVICE_ID}?hours=${currentTimeRange}`);
+                const data = await response.json();
+                
+                const labels = [];
+                const powerData = [];
+                
+                // データを時系列順にソート（古い順）
+                data.readings.sort((a, b) => a.timestamp - b.timestamp);
+                
+                data.readings.forEach(reading => {
+                    const date = new Date(reading.timestamp * 1000);
+                    labels.push(date.toLocaleString('ja-JP', {
+                        month: '2-digit',
+                        day: '2-digit',
+                        hour: '2-digit',
+                        minute: '2-digit',
+                        second: '2-digit'
+                    }));
+                    powerData.push(reading.power);
+                });
+
+                chart.data.labels = labels;
+                chart.data.datasets[0].data = powerData;
+                chart.update();
+            } catch (error) {
+                console.error('Error fetching history data:', error);
+            }
+        }
+
+        function setTimeRange(hours) {
+            currentTimeRange = hours;
+            
+            // ボタンのアクティブ状態を更新
+            document.querySelectorAll('button').forEach(btn => btn.classList.remove('active'));
+            document.getElementById(`btn${hours}h` || `btn1w`).classList.add('active');
+            
+            fetchHistoryData();
+        }
+
+        function refreshData() {
+            fetchCurrentData();
+            fetchHistoryData();
+        }
+
+        // 初期化
+        initChart();
+        refreshData();
+        
+        // 10秒ごとに現在のデータを更新
+        setInterval(fetchCurrentData, 10000);
+        
+        // 30秒ごとに履歴データを更新
+        setInterval(fetchHistoryData, 30000);
+    </script>
+</body>
+</html>

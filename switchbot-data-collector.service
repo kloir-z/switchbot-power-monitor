@@ -1,0 +1,13 @@
+[Unit]
+Description=SwitchBot Power Data Collection
+After=switchbot-power-monitor.service
+Requires=switchbot-power-monitor.service
+
+[Service]
+Type=oneshot
+User=user
+WorkingDirectory=/home/user/switchbot-power-monitor
+ExecStart=/home/user/switchbot-power-monitor/start_data_collection.sh
+
+[Install]
+WantedBy=multi-user.target

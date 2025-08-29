@@ -1,0 +1,24 @@
+[Unit]
+Description=SwitchBot Power Monitor Service
+After=network.target
+
+[Service]
+Type=simple
+User=user
+Group=user
+WorkingDirectory=/home/user/switchbot-power-monitor
+Environment=PATH=/home/user/switchbot-power-monitor/.venv/bin
+ExecStart=/home/user/switchbot-power-monitor/.venv/bin/python main.py
+Restart=always
+RestartSec=10
+
+# Environment variables
+EnvironmentFile=/home/user/switchbot-power-monitor/.env
+
+# Logging
+StandardOutput=syslog
+StandardError=syslog
+SyslogIdentifier=switchbot-power-monitor
+
+[Install]
+WantedBy=multi-user.target
