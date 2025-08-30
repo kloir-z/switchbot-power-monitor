@@ -440,68 +440,41 @@
 
         async function fetchDevices() {
             try {
-                const response = await fetch('/devices');
-                const data = await response.json();
+                // Get device list from database only (no SwitchBot API calls)
+                const dbResponse = await fetch('/power/db/current');
+                const dbData = await dbResponse.json();
                 
-                // Check for error response
-                if (data.detail && data.detail.includes('Failed')) {
-                    throw new Error(data.detail);
-                }
-                
-                if (data.body && data.body.deviceList) {
-                    // Plug Mini デバイスのみフィルタ
-                    const plugDevices = data.body.deviceList.filter(device => 
-                        device.deviceType.startsWith('Plug Mini')
-                    );
-                    
+                if (Object.keys(dbData).length > 0) {
                     devices = {};
-                    plugDevices.forEach(device => {
-                        devices[device.deviceId] = {
-                            id: device.deviceId,
-                            name: device.deviceName,
-                            type: device.deviceType
+                    Object.keys(dbData).forEach(deviceId => {
+                        devices[deviceId] = {
+                            id: deviceId,
+                            name: dbData[deviceId].name || `SwitchBot Plug Mini (${deviceId.slice(-4)})`,
+                            type: 'Plug Mini'
                         };
                     });
                     
                     updateDeviceSelector();
                     createDevicePanels();
+                    console.log('Loaded devices from database:', devices);
                 } else {
-                    throw new Error('No device list found in response');
-                }
-            } catch (error) {
-                console.error('Error fetching devices from API, trying to recover from database:', error);
-                
-                // Fallback: Try to get device list from database
-                try {
-                    const dbResponse = await fetch('/power/db/current');
-                    const dbData = await dbResponse.json();
-                    
-                    if (Object.keys(dbData).length > 0) {
-                        devices = {};
-                        Object.keys(dbData).forEach(deviceId => {
-                            devices[deviceId] = {
-                                id: deviceId,
-                                name: dbData[deviceId].name || `Device ${deviceId}`,
-                                type: 'Plug Mini (from DB)'
-                            };
-                        });
-                        
-                        updateDeviceSelector();
-                        createDevicePanels();
-                        console.log('Recovered devices from database:', devices);
-                    } else {
-                        console.error('No devices found in database');
-                    }
-                } catch (dbError) {
-                    console.error('Failed to recover devices from database:', dbError);
                     // Show a message that no devices are available
                     document.getElementById('deviceGrid').innerHTML = 
                         '<div style="text-align: center; padding: 40px; color: #dc3545;">'+
-                        '<h3>❌ デバイス情報を取得できませんでした</h3>' +
-                        '<p>API接続エラーにより、デバイス一覧を取得できません。<br>' +
-                        'しばらく待ってから画面を更新してください。</p>' +
+                        '<h3>❌ デバイスデータがありません</h3>' +
+                        '<p>データベースにデバイスデータが見つかりません。<br>' +
+                        'systemdタイマーによるデータ収集が開始されるまでしばらくお待ちください。</p>' +
                         '</div>';
                 }
+            } catch (error) {
+                console.error('Error fetching devices from database:', error);
+                // Show error message
+                document.getElementById('deviceGrid').innerHTML = 
+                    '<div style="text-align: center; padding: 40px; color: #dc3545;">'+
+                    '<h3>❌ エラー</h3>' +
+                    '<p>デバイス情報の取得中にエラーが発生しました。<br>' +
+                    'しばらく待ってから画面を更新してください。</p>' +
+                    '</div>';
             }
         }
 
@@ -628,8 +601,8 @@
 
         async function fetchAllCurrentData() {
             try {
-                // First try the regular API endpoint
-                const response = await fetch('/power/all/current');
+                // Use database-only endpoint to avoid SwitchBot API calls
+                const response = await fetch('/power/db/current');
                 const data = await response.json();
                 
                 
@@ -675,73 +648,23 @@
                 });
                 
             } catch (error) {
-                console.error('Error fetching current data from API, trying database fallback:', error);
-                
-                // Fallback to database-only endpoint
-                try {
-                    const dbResponse = await fetch('/power/db/current');
-                    const dbData = await dbResponse.json();
+                console.error('Error fetching current data from database:', error);
+                // Set all devices to error state
+                Object.keys(devices).forEach(deviceId => {
+                    document.getElementById(`power-${deviceId}`).textContent = '--W';
+                    document.getElementById(`voltage-${deviceId}`).textContent = '--V';
+                    document.getElementById(`current-${deviceId}`).textContent = '--mA';
+                    document.getElementById(`daily-${deviceId}`).textContent = '--Wh';
                     
-                    Object.keys(devices).forEach(deviceId => {
-                        if (dbData[deviceId] && dbData[deviceId].data) {
-                            const deviceData = dbData[deviceId].data;
-                            const power = deviceData.power || 0;
-                            const voltage = deviceData.voltage || 0;
-                            const current = deviceData.electric_current || 0;
-                            const daily = deviceData.electricity_of_day || 0;
-                            
-                            document.getElementById(`power-${deviceId}`).textContent = power + 'W';
-                            document.getElementById(`voltage-${deviceId}`).textContent = voltage + 'V';
-                            document.getElementById(`current-${deviceId}`).textContent = current + 'mA';
-                            document.getElementById(`daily-${deviceId}`).textContent = daily + 'Wh';
-                            
-                            // データベースからのデータであることを示す
-                            const panel = document.getElementById(`panel-${deviceId}`);
-                            if (panel) {
-                                const header = panel.querySelector('h2');
-                                if (header) {
-                                    const deviceName = devices[deviceId].name;
-                                    const status = power > 0 ? '⚡ アクティブ' : '⭕ 待機中';
-                                    header.textContent = `${deviceName} (${status} - DB)`;
-                                }
-                            }
-                        } else {
-                            // No data available in database either
-                            document.getElementById(`power-${deviceId}`).textContent = '--W';
-                            document.getElementById(`voltage-${deviceId}`).textContent = '--V';
-                            document.getElementById(`current-${deviceId}`).textContent = '--mA';
-                            document.getElementById(`daily-${deviceId}`).textContent = '--Wh';
-                            
-                            const panel = document.getElementById(`panel-${deviceId}`);
-                            if (panel) {
-                                const header = panel.querySelector('h2');
-                                if (header) {
-                                    const deviceName = devices[deviceId].name;
-                                    header.textContent = `${deviceName} (❌ データなし)`;
-                                }
-                            }
+                    const panel = document.getElementById(`panel-${deviceId}`);
+                    if (panel) {
+                        const header = panel.querySelector('h2');
+                        if (header) {
+                            const deviceName = devices[deviceId].name;
+                            header.textContent = `${deviceName} (❌ エラー)`;
                         }
-                    });
-                    
-                } catch (dbError) {
-                    console.error('Database fallback also failed:', dbError);
-                    // Set all devices to error state
-                    Object.keys(devices).forEach(deviceId => {
-                        document.getElementById(`power-${deviceId}`).textContent = '--W';
-                        document.getElementById(`voltage-${deviceId}`).textContent = '--V';
-                        document.getElementById(`current-${deviceId}`).textContent = '--mA';
-                        document.getElementById(`daily-${deviceId}`).textContent = '--Wh';
-                        
-                        const panel = document.getElementById(`panel-${deviceId}`);
-                        if (panel) {
-                            const header = panel.querySelector('h2');
-                            if (header) {
-                                const deviceName = devices[deviceId].name;
-                                header.textContent = `${deviceName} (❌ エラー)`;
-                            }
-                        }
-                    });
-                }
+                    }
+                });
             }
         }
 

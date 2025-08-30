@@ -45,36 +45,15 @@ async def root():
         "message": "SwitchBot Power Monitor API",
         "version": "1.0.0",
         "endpoints": [
-            "/devices - List all SwitchBot devices",
-            "/power/current/{device_id} - Get current power reading",
-            "/power/history/{device_id} - Get power history",
-            "/power/collect/{device_id} - Manually collect power data"
+            "/power/history/{device_id} - Get power history from database",
+            "/power/latest/{device_id} - Get latest stored reading",
+            "/power/db/current - Get current readings from database",
+            "/database/stats - Get database statistics",
+            "/dashboard - Web monitoring interface"
         ]
     }
 
-@app.get("/devices")
-async def get_devices():
-    """Get all SwitchBot devices"""
-    if not switchbot_client:
-        raise HTTPException(status_code=500, detail="SwitchBot client not configured")
-    
-    devices = switchbot_client.get_devices()
-    if devices is None:
-        raise HTTPException(status_code=500, detail="Failed to fetch devices")
-    
-    return devices
 
-@app.get("/power/current/{device_id}")
-async def get_current_power(device_id: str):
-    """Get current power reading for a device"""
-    if not switchbot_client:
-        raise HTTPException(status_code=500, detail="SwitchBot client not configured")
-    
-    power_data = switchbot_client.get_plug_power_data(device_id)
-    if power_data is None:
-        raise HTTPException(status_code=404, detail="Device not found or no data available")
-    
-    return power_data
 
 @app.get("/power/history/{device_id}")
 async def get_power_history(device_id: str, hours: int = 24, limit: int = 1000):
@@ -145,69 +124,7 @@ async def collect_all_power_data():
         "results": results
     }
 
-@app.post("/power/collect/all/legacy")
-async def collect_all_power_data_legacy():
-    """Legacy method: Collect and store power data for all Plug Mini devices (with device list fetching)"""
-    if not switchbot_client:
-        raise HTTPException(status_code=500, detail="SwitchBot client not configured")
-    
-    devices = switchbot_client.get_devices()
-    if devices is None or "body" not in devices or "deviceList" not in devices["body"]:
-        raise HTTPException(status_code=500, detail="Failed to fetch devices")
-    
-    # Filter for Plug Mini devices only
-    plug_devices = [
-        device for device in devices["body"]["deviceList"] 
-        if device.get("deviceType", "").startswith("Plug Mini")
-    ]
-    
-    results = {}
-    success_count = 0
-    
-    for device in plug_devices:
-        device_id = device["deviceId"]
-        device_name = device["deviceName"]
-        
-        power_data = switchbot_client.get_plug_power_data(device_id)
-        if power_data:
-            success = storage.save_power_data(power_data)
-            results[device_id] = {
-                "name": device_name,
-                "success": success,
-                "data": power_data if success else None
-            }
-            if success:
-                success_count += 1
-        else:
-            results[device_id] = {
-                "name": device_name,
-                "success": False,
-                "error": "Failed to get power data"
-            }
-    
-    return {
-        "message": f"Collected data for {success_count}/{len(plug_devices)} devices",
-        "results": results
-    }
 
-@app.post("/power/collect/{device_id}")
-async def collect_power_data(device_id: str):
-    """Manually collect and store power data for a device"""
-    if not switchbot_client:
-        raise HTTPException(status_code=500, detail="SwitchBot client not configured")
-    
-    power_data = switchbot_client.get_plug_power_data(device_id)
-    if power_data is None:
-        raise HTTPException(status_code=404, detail="Device not found or no data available")
-    
-    success = storage.save_power_data(power_data)
-    if not success:
-        raise HTTPException(status_code=500, detail="Failed to save power data")
-    
-    return {
-        "message": "Power data collected successfully",
-        "data": power_data
-    }
 
 @app.get("/power/latest/{device_id}")
 async def get_latest_reading(device_id: str):
@@ -223,63 +140,7 @@ async def dashboard(request: Request):
     """Dashboard UI for power monitoring"""
     return templates.TemplateResponse("dashboard.html", {"request": request})
 
-@app.get("/power/all/current")
-async def get_all_current_power():
-    """Get current power readings for all Plug Mini devices"""
-    if not switchbot_client:
-        raise HTTPException(status_code=500, detail="SwitchBot client not configured")
-    
-    devices = switchbot_client.get_devices()
-    if devices is None or "body" not in devices or "deviceList" not in devices["body"]:
-        raise HTTPException(status_code=500, detail="Failed to fetch devices")
-    
-    # Filter for Plug Mini devices only
-    plug_devices = [
-        device for device in devices["body"]["deviceList"] 
-        if device.get("deviceType", "").startswith("Plug Mini")
-    ]
-    
-    results = {}
-    for device in plug_devices:
-        device_id = device["deviceId"]
-        device_name = device["deviceName"]
-        power_data = switchbot_client.get_plug_power_data(device_id)
-        if power_data:
-            results[device_id] = {
-                "name": device_name,
-                "data": power_data
-            }
-    
-    return results
 
-@app.get("/power/all/latest")
-async def get_all_latest_readings():
-    """Get latest stored readings for all devices in database"""
-    if not switchbot_client:
-        raise HTTPException(status_code=500, detail="SwitchBot client not configured")
-    
-    devices = switchbot_client.get_devices()
-    if devices is None or "body" not in devices or "deviceList" not in devices["body"]:
-        raise HTTPException(status_code=500, detail="Failed to fetch devices")
-    
-    # Filter for Plug Mini devices only
-    plug_devices = [
-        device for device in devices["body"]["deviceList"] 
-        if device.get("deviceType", "").startswith("Plug Mini")
-    ]
-    
-    results = {}
-    for device in plug_devices:
-        device_id = device["deviceId"]
-        device_name = device["deviceName"]
-        latest = storage.get_latest_reading(device_id)
-        if latest:
-            results[device_id] = {
-                "name": device_name,
-                "data": latest
-            }
-    
-    return results
 
 @app.get("/power/db/latest")
 async def get_db_latest_readings():
