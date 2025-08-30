@@ -4,12 +4,13 @@ Raspberry Pi 4用のSwitchBot Plug Miniリアルタイム電力監視システ�
 
 ## 機能
 
-- **リアルタイム電力監視**: SwitchBot Plug Mini APIから10秒間隔でデータ取得
-- **Webダッシュボード**: Chart.jsを使った美しいリアルタイムグラフ表示
+- **リアルタイム電力監視**: SwitchBot Plug Mini APIから20秒間隔でデータ取得
+- **Webダッシュボード**: Chart.jsを使った美しいリアルタイムグラフ表示（データベース専用）
 - **データベース保存**: SQLiteでの電力データ履歴保存
 - **RESTful API**: FastAPIによるJSON API提供
 - **systemdサービス**: 自動起動・再起動対応
-- **自動データ収集**: systemdタイマーによる10秒間隔収集
+- **自動データ収集**: systemdタイマーによる20秒間隔収集
+- **データベース管理**: CSV出力、データ削除、統計表示機能
 
 ## セットアップ
 
@@ -35,10 +36,8 @@ cd /home/user/switchbot-power-monitor
 # 依存関係をインストール
 uv sync
 
-# デバイスIDを確認
-uv run main.py &
-curl http://localhost:8001/devices
-# device IDをメモして .env に設定
+# デバイスIDを確認（一時的にテスト用エンドポイントを作成）
+# または SwitchBot アプリで Device ID を確認して .env に設定
 ```
 
 ### 4. systemdサービスとして登録（推奨）
@@ -64,8 +63,10 @@ sudo systemctl start switchbot-data-collector.timer
 
 **機能:**
 - リアルタイム電力・電圧・電流・日次消費量表示
+- マルチデバイス対応（複数のPlug Miniデバイス監視）
 - 時間範囲選択（1時間・6時間・24時間・1週間）
 - 自動更新（現在値10秒・履歴30秒ごと）
+- データベース管理（統計表示、CSV出力、データ削除）
 
 ### 手動サーバー起動
 
@@ -76,26 +77,38 @@ uv run main.py
 
 ### API エンドポイント
 
+**データ取得（データベース専用）:**
 - `GET /` - API情報
 - `GET /dashboard` - Webダッシュボード
-- `GET /devices` - デバイス一覧
-- `GET /power/current/{device_id}` - リアルタイム電力データ
 - `GET /power/history/{device_id}?hours=24` - 電力履歴
-- `POST /power/collect/{device_id}` - 手動データ収集
 - `GET /power/latest/{device_id}` - 最新の保存データ
+- `GET /power/db/current` - 全デバイスの現在データ（DB専用）
 - `GET /health` - ヘルスチェック
+
+**データベース管理:**
+- `GET /database/stats` - データベース統計
+- `POST /database/export/all?hours=24` - 全デバイスCSV出力
+- `POST /database/export/{device_id}?hours=24` - 個別デバイスCSV出力
+- `DELETE /database/delete/{device_id}?confirm=true` - デバイスデータ削除
+- `DELETE /database/delete/old?minutes=1440&confirm=true` - 古いデータ削除
+
+**システム専用（systemdタイマー使用）:**
+- `POST /power/collect/all` - 全デバイスデータ収集（SwitchBot API呼び出し）
 
 ### API使用例
 
 ```bash
-# 現在の電力データを取得
-curl http://localhost:8001/power/current/YOUR_DEVICE_ID
-
 # 過去24時間の履歴を取得  
 curl http://localhost:8001/power/history/YOUR_DEVICE_ID?hours=24
 
-# データを手動収集・保存
-curl -X POST http://localhost:8001/power/collect/YOUR_DEVICE_ID
+# データベースから現在の全デバイス状況を取得
+curl http://localhost:8001/power/db/current
+
+# データベース統計を確認
+curl http://localhost:8001/database/stats
+
+# CSV出力（過去24時間）
+curl -X POST http://localhost:8001/database/export/all?hours=24 -o power_data.csv
 ```
 
 ## データ構造
@@ -116,7 +129,7 @@ curl -X POST http://localhost:8001/power/collect/YOUR_DEVICE_ID
 
 ### systemdタイマー（推奨・設定済み）
 
-10秒間隔の自動データ収集が設定されています：
+20秒間隔の自動データ収集が設定されています（API使用量最適化）：
 
 ```bash
 # タイマー状態確認
@@ -173,3 +186,17 @@ sudo journalctl -u switchbot-data-collector.service -f
 3. **データが収集されない**
    - Hub Mini2がオンラインか確認
    - デバイスIDが正しいか確認
+
+## SwitchBot API使用量について
+
+このシステムは **SwitchBot APIの1日10,000回制限** を考慮して設計されています：
+
+### 現在の使用量
+- **データ収集**: 20秒間隔 × 2デバイス = 8,640回/日
+- **WebUI**: データベースのみアクセス（APIアクセス0回）
+- **合計**: 8,640回/日（制限の86.4%）
+
+### API制限の管理
+- WebUIはすべてデータベースから取得（リアルタイム表示維持）
+- 不要なAPIエンドポイントを削除してAPI呼び出しを最小化
+- systemdタイマー間隔を調整してAPI使用量をコントロール可能

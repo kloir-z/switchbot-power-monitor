@@ -9,8 +9,9 @@ SwitchBot Power Monitor is a real-time power monitoring system for SwitchBot Plu
 - **FastAPI web server** (`main.py`) - REST API and web dashboard on port 8001
 - **SwitchBot API client** (`switchbot_client.py`) - Handles authentication and device communication
 - **SQLite data storage** (`data_storage.py`) - Stores power readings with timestamps
-- **Web dashboard** (`templates/dashboard.html`) - Chart.js-based real-time monitoring interface
-- **systemd services** - Auto-start API server and 10-second interval data collection
+- **Web dashboard** (`templates/dashboard.html`) - Chart.js-based real-time monitoring interface (database-only)
+- **systemd services** - Auto-start API server and 20-second interval data collection
+- **Database management** - CSV export, data deletion, statistics functions
 
 ## Development Commands
 
@@ -21,10 +22,10 @@ uv sync
 # Run the server locally
 uv run main.py
 
-# Test API endpoints
-curl http://localhost:8001/devices
-curl http://localhost:8001/power/current/DEVICE_ID
-curl -X POST http://localhost:8001/power/collect/DEVICE_ID
+# Test API endpoints (database-only)
+curl http://localhost:8001/power/db/current
+curl http://localhost:8001/power/history/DEVICE_ID?hours=24
+curl http://localhost:8001/database/stats
 
 # Access web dashboard
 # http://localhost:8001/dashboard
@@ -51,14 +52,24 @@ curl -X POST http://localhost:8001/power/collect/DEVICE_ID
 
 ### API Endpoints
 
+**Data Access (Database-only):**
 - `GET /` - API information
-- `GET /devices` - List SwitchBot devices  
-- `GET /power/current/{device_id}` - Real-time power data from API
 - `GET /power/history/{device_id}?hours=24` - Historical data from database
-- `POST /power/collect/{device_id}` - Fetch and store power data
 - `GET /power/latest/{device_id}` - Latest stored reading
+- `GET /power/db/current` - Current data for all devices (database-only)
+- `GET /power/db/latest` - Latest data for all devices (database-only)
 - `GET /dashboard` - Web interface
 - `GET /health` - Health check
+
+**Database Management:**
+- `GET /database/stats` - Database statistics and file info
+- `POST /database/export/all?hours=24` - Export all devices data as CSV
+- `POST /database/export/{device_id}?hours=24` - Export single device data as CSV
+- `DELETE /database/delete/{device_id}?confirm=true` - Delete all data for device
+- `DELETE /database/delete/old?minutes=1440&confirm=true` - Delete old data
+
+**System Internal (SwitchBot API calls):**
+- `POST /power/collect/all` - Collect data from all known devices (used by systemd timer)
 
 ### Environment Configuration
 
@@ -70,17 +81,26 @@ Required `.env` variables:
 ### systemd Integration
 
 - **API Server**: `switchbot-power-monitor.service` - Runs main.py as daemon
-- **Data Collection**: `switchbot-data-collector.timer` + `.service` - 10-second interval collection
+- **Data Collection**: `switchbot-data-collector.timer` + `.service` - 20-second interval collection
 - Working directory: `/home/user/switchbot-power-monitor`
 - Virtual environment path: `.venv/bin/python`
 
 ### Data Flow
 
-1. systemd timer triggers collection service every 10 seconds
-2. Collection service calls `POST /power/collect/{device_id}`
-3. API fetches current data from SwitchBot API via authenticated client
+1. systemd timer triggers collection service every 20 seconds
+2. Collection service calls `POST /power/collect/all` 
+3. API fetches current data from SwitchBot API for all known devices via authenticated client
 4. Data stored in SQLite with timestamp
-5. Dashboard polls `/power/current` (10s) and `/power/history` (30s) for real-time updates
+5. Dashboard polls `/power/db/current` (10s) and `/power/history` (30s) for real-time updates from database only
+
+### SwitchBot API Usage Optimization
+
+The system is designed to minimize SwitchBot API calls while maintaining real-time monitoring:
+
+- **Total API calls**: 20-second intervals × 2 devices = 8,640 calls/day (86.4% of 10,000 limit)
+- **WebUI access**: 0 API calls (database-only)
+- **Removed endpoints**: All unnecessary SwitchBot API endpoints deleted
+- **Optimized collection**: Uses database to determine known devices instead of device list API
 
 ## Development Notes
 
