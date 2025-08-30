@@ -64,6 +64,7 @@ class SwitchBotClient:
         status = self.get_device_status(device_id)
         if status and "body" in status:
             body = status["body"]
+            
             power_data = {
                 "device_id": device_id,
                 "timestamp": int(time.time()),

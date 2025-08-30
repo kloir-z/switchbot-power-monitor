@@ -7,7 +7,9 @@ Requires=switchbot-power-monitor.service
 Type=oneshot
 User=user
 WorkingDirectory=/home/user/switchbot-power-monitor
-ExecStart=/home/user/switchbot-power-monitor/start_data_collection.sh
+ExecStart=/home/user/switchbot-power-monitor/.venv/bin/python /home/user/switchbot-power-monitor/collect_data.py
+StandardOutput=journal
+StandardError=journal
 
 [Install]
 WantedBy=multi-user.target

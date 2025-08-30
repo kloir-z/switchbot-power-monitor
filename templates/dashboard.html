@@ -12,7 +12,7 @@
             background-color: #f5f5f5;
         }
         .container {
-            max-width: 1200px;
+            max-width: 1400px;
             margin: 0 auto;
             background: white;
             padding: 20px;
@@ -24,37 +24,66 @@
             color: #333;
             margin-bottom: 30px;
         }
-        .stats {
-            display: flex;
-            justify-content: space-around;
+        .device-selector {
+            text-align: center;
+            margin-bottom: 20px;
+        }
+        select {
+            padding: 8px 15px;
+            border-radius: 4px;
+            border: 1px solid #ddd;
+            font-size: 14px;
+            margin: 0 10px;
+        }
+        .device-grid {
+            display: grid;
+            grid-template-columns: repeat(auto-fit, minmax(600px, 1fr));
+            gap: 30px;
             margin-bottom: 30px;
-            flex-wrap: wrap;
+        }
+        .device-panel {
+            border: 2px solid #ddd;
+            border-radius: 8px;
+            padding: 20px;
+            background: #fafafa;
+        }
+        .device-panel h2 {
+            margin: 0 0 20px 0;
+            text-align: center;
+            color: #333;
+            font-size: 18px;
+        }
+        .stats {
+            display: grid;
+            grid-template-columns: repeat(auto-fit, minmax(120px, 1fr));
+            gap: 10px;
+            margin-bottom: 20px;
         }
         .stat-card {
             background: #007bff;
             color: white;
-            padding: 20px;
-            border-radius: 8px;
+            padding: 15px;
+            border-radius: 6px;
             text-align: center;
-            min-width: 150px;
-            margin: 10px;
+            min-width: 120px;
         }
         .stat-card h3 {
-            margin: 0 0 10px 0;
-            font-size: 14px;
+            margin: 0 0 8px 0;
+            font-size: 12px;
+            font-weight: normal;
         }
         .stat-card .value {
-            font-size: 24px;
+            font-size: 18px;
             font-weight: bold;
         }
         .chart-container {
             position: relative;
-            height: 400px;
-            margin-bottom: 30px;
+            height: 300px;
+            margin-bottom: 15px;
         }
         .controls {
             text-align: center;
-            margin-bottom: 20px;
+            margin-bottom: 30px;
         }
         button {
             background: #007bff;
@@ -71,30 +100,29 @@
         button.active {
             background: #28a745;
         }
+        .device-1 { border-color: #007bff; }
+        .device-1 .stat-card { background: #007bff; }
+        .device-2 { border-color: #28a745; }
+        .device-2 .stat-card { background: #28a745; }
+        .device-3 { border-color: #ffc107; }
+        .device-3 .stat-card { background: #ffc107; color: #333; }
     </style>
 </head>
 <body>
     <div class="container">
-        <h1>Raspberry Pi 4 電力監視</h1>
+        <h1>SwitchBot Plug Mini 電力監視</h1>
         
-        <div class="stats">
-            <div class="stat-card">
-                <h3>現在の消費電力</h3>
-                <div class="value" id="currentPower">--W</div>
-            </div>
-            <div class="stat-card">
-                <h3>電圧</h3>
-                <div class="value" id="voltage">--V</div>
-            </div>
-            <div class="stat-card">
-                <h3>電流</h3>
-                <div class="value" id="current">--mA</div>
-            </div>
-            <div class="stat-card">
-                <h3>本日の消費電力</h3>
-                <div class="value" id="dailyPower">--Wh</div>
-            </div>
+        <div class="device-selector">
+            <label for="viewMode">表示モード:</label>
+            <select id="viewMode" onchange="changeViewMode()">
+                <option value="all">全デバイス</option>
+                <option value="single">単一デバイス</option>
+            </select>
+            <select id="deviceSelector" onchange="changeSelectedDevice()" style="display:none;">
+                <option value="">デバイスを選択...</option>
+            </select>
         </div>
+
 
         <div class="controls">
             <button onclick="setTimeRange(1)" id="btn1h">1時間</button>
@@ -104,83 +132,224 @@
             <button onclick="refreshData()">更新</button>
         </div>
 
-        <div class="chart-container">
-            <canvas id="powerChart"></canvas>
+        <div id="deviceGrid" class="device-grid">
+            <!-- デバイスパネルは動的に生成 -->
         </div>
     </div>
 
     <script>
-        const DEVICE_ID = '48CA43C49E36';
+        let devices = {};
+        let charts = {};
         let currentTimeRange = 24;
-        let chart = null;
+        let viewMode = 'all';
+        let selectedDeviceId = null;
 
-        function initChart() {
-            const ctx = document.getElementById('powerChart').getContext('2d');
-            chart = new Chart(ctx, {
-                type: 'line',
-                data: {
-                    labels: [],
-                    datasets: [{
-                        label: '消費電力 (W)',
-                        data: [],
-                        borderColor: '#007bff',
-                        backgroundColor: 'rgba(0, 123, 255, 0.1)',
-                        borderWidth: 2,
-                        fill: true,
-                        tension: 0.1
-                    }]
-                },
-                options: {
-                    responsive: true,
-                    maintainAspectRatio: false,
-                    plugins: {
-                        title: {
-                            display: true,
-                            text: '電力消費推移'
-                        }
-                    },
-                    scales: {
-                        y: {
-                            beginAtZero: true,
-                            title: {
-                                display: true,
-                                text: '消費電力 (W)'
-                            }
-                        },
-                        x: {
-                            title: {
-                                display: true,
-                                text: '時刻'
-                            }
-                        }
-                    }
+        async function fetchDevices() {
+            try {
+                const response = await fetch('/devices');
+                const data = await response.json();
+                
+                if (data.body && data.body.deviceList) {
+                    // Plug Mini デバイスのみフィルタ
+                    const plugDevices = data.body.deviceList.filter(device => 
+                        device.deviceType.startsWith('Plug Mini')
+                    );
+                    
+                    devices = {};
+                    plugDevices.forEach(device => {
+                        devices[device.deviceId] = {
+                            id: device.deviceId,
+                            name: device.deviceName,
+                            type: device.deviceType
+                        };
+                    });
+                    
+                    updateDeviceSelector();
+                    createDevicePanels();
                 }
+            } catch (error) {
+                console.error('Error fetching devices:', error);
+            }
+        }
+
+        function updateDeviceSelector() {
+            const selector = document.getElementById('deviceSelector');
+            selector.innerHTML = '<option value="">デバイスを選択...</option>';
+            
+            Object.values(devices).forEach(device => {
+                const option = document.createElement('option');
+                option.value = device.id;
+                option.textContent = device.name;
+                selector.appendChild(option);
             });
         }
 
-        async function fetchCurrentData() {
+        function createDevicePanels() {
+            const grid = document.getElementById('deviceGrid');
+            grid.innerHTML = '';
+            
+            let deviceIndex = 1;
+            Object.values(devices).forEach(device => {
+                const panel = document.createElement('div');
+                panel.className = `device-panel device-${deviceIndex}`;
+                panel.id = `panel-${device.id}`;
+                
+                panel.innerHTML = `
+                    <h2>${device.name}</h2>
+                    <div class="stats">
+                        <div class="stat-card">
+                            <h3>消費電力</h3>
+                            <div class="value" id="power-${device.id}">--W</div>
+                        </div>
+                        <div class="stat-card">
+                            <h3>電圧</h3>
+                            <div class="value" id="voltage-${device.id}">--V</div>
+                        </div>
+                        <div class="stat-card">
+                            <h3>電流</h3>
+                            <div class="value" id="current-${device.id}">--mA</div>
+                        </div>
+                        <div class="stat-card">
+                            <h3>本日消費</h3>
+                            <div class="value" id="daily-${device.id}">--Wh</div>
+                        </div>
+                    </div>
+                    <div class="chart-container">
+                        <canvas id="chart-${device.id}"></canvas>
+                    </div>
+                `;
+                
+                grid.appendChild(panel);
+                deviceIndex++;
+            });
+            
+            initAllCharts();
+        }
+
+        function initAllCharts() {
+            Object.values(devices).forEach(device => {
+                const ctx = document.getElementById(`chart-${device.id}`).getContext('2d');
+                charts[device.id] = new Chart(ctx, {
+                    type: 'line',
+                    data: {
+                        labels: [],
+                        datasets: [{
+                            label: `${device.name} (W)`,
+                            data: [],
+                            borderColor: getDeviceColor(device.id),
+                            backgroundColor: getDeviceColor(device.id, 0.1),
+                            borderWidth: 2,
+                            fill: true,
+                            tension: 0.1
+                        }]
+                    },
+                    options: {
+                        responsive: true,
+                        maintainAspectRatio: false,
+                        plugins: {
+                            title: {
+                                display: true,
+                                text: '電力消費推移'
+                            }
+                        },
+                        scales: {
+                            y: {
+                                beginAtZero: true,
+                                title: {
+                                    display: true,
+                                    text: '消費電力 (W)'
+                                }
+                            },
+                            x: {
+                                title: {
+                                    display: true,
+                                    text: '時刻'
+                                }
+                            }
+                        }
+                    }
+                });
+            });
+        }
+
+        function getDeviceColor(deviceId, alpha = 1) {
+            const colors = ['#007bff', '#28a745', '#ffc107'];
+            const deviceIds = Object.keys(devices);
+            const index = deviceIds.indexOf(deviceId) % colors.length;
+            
+            if (alpha < 1) {
+                const color = colors[index];
+                const r = parseInt(color.slice(1, 3), 16);
+                const g = parseInt(color.slice(3, 5), 16);
+                const b = parseInt(color.slice(5, 7), 16);
+                return `rgba(${r}, ${g}, ${b}, ${alpha})`;
+            }
+            
+            return colors[index];
+        }
+
+        async function fetchAllCurrentData() {
             try {
-                const response = await fetch(`/power/current/${DEVICE_ID}`);
+                const response = await fetch('/power/all/current');
                 const data = await response.json();
                 
-                document.getElementById('currentPower').textContent = data.power + 'W';
-                document.getElementById('voltage').textContent = data.voltage + 'V';
-                document.getElementById('current').textContent = data.electric_current + 'mA';
-                document.getElementById('dailyPower').textContent = data.electricity_of_day + 'Wh';
+                
+                Object.keys(devices).forEach(deviceId => {
+                    if (data[deviceId] && data[deviceId].data) {
+                        const deviceData = data[deviceId].data;
+                        const power = deviceData.power || 0;
+                        const voltage = deviceData.voltage || 0;
+                        const current = deviceData.electric_current || 0;
+                        const daily = deviceData.electricity_of_day || 0;
+                        
+                        document.getElementById(`power-${deviceId}`).textContent = power + 'W';
+                        document.getElementById(`voltage-${deviceId}`).textContent = voltage + 'V';
+                        document.getElementById(`current-${deviceId}`).textContent = current + 'mA';
+                        document.getElementById(`daily-${deviceId}`).textContent = daily + 'Wh';
+                        
+                        // デバイスの状態をパネルに表示
+                        const panel = document.getElementById(`panel-${deviceId}`);
+                        if (panel) {
+                            const header = panel.querySelector('h2');
+                            if (header) {
+                                const deviceName = devices[deviceId].name;
+                                const status = power > 0 ? '⚡ アクティブ' : '⭕ 待機中';
+                                header.textContent = `${deviceName} (${status})`;
+                            }
+                        }
+                    } else {
+                        document.getElementById(`power-${deviceId}`).textContent = '--W';
+                        document.getElementById(`voltage-${deviceId}`).textContent = '--V';
+                        document.getElementById(`current-${deviceId}`).textContent = '--mA';
+                        document.getElementById(`daily-${deviceId}`).textContent = '--Wh';
+                        
+                        // エラー状態を表示
+                        const panel = document.getElementById(`panel-${deviceId}`);
+                        if (panel) {
+                            const header = panel.querySelector('h2');
+                            if (header) {
+                                const deviceName = devices[deviceId].name;
+                                header.textContent = `${deviceName} (❌ エラー)`;
+                            }
+                        }
+                    }
+                });
+                
             } catch (error) {
                 console.error('Error fetching current data:', error);
             }
         }
 
-        async function fetchHistoryData() {
+        async function fetchHistoryData(deviceId) {
             try {
-                const response = await fetch(`/power/history/${DEVICE_ID}?hours=${currentTimeRange}`);
+                const response = await fetch(`/power/history/${deviceId}?hours=${currentTimeRange}`);
                 const data = await response.json();
+                
+                console.log(`History data for device ${deviceId}:`, data);
                 
                 const labels = [];
                 const powerData = [];
                 
-                // データを時系列順にソート（古い順）
                 data.readings.sort((a, b) => a.timestamp - b.timestamp);
                 
                 data.readings.forEach(reading => {
@@ -189,44 +358,111 @@
                         month: '2-digit',
                         day: '2-digit',
                         hour: '2-digit',
-                        minute: '2-digit',
-                        second: '2-digit'
+                        minute: '2-digit'
                     }));
                     powerData.push(reading.power);
                 });
 
-                chart.data.labels = labels;
-                chart.data.datasets[0].data = powerData;
-                chart.update();
+                console.log(`Device ${deviceId} chart data - Labels:`, labels.length, 'Power values:', powerData);
+
+                if (charts[deviceId]) {
+                    charts[deviceId].data.labels = labels;
+                    charts[deviceId].data.datasets[0].data = powerData;
+                    charts[deviceId].update();
+                    console.log(`Chart updated for device ${deviceId}`);
+                } else {
+                    console.error(`Chart not found for device ${deviceId}`);
+                }
             } catch (error) {
-                console.error('Error fetching history data:', error);
+                console.error(`Error fetching history data for ${deviceId}:`, error);
             }
+        }
+
+        function fetchAllHistoryData() {
+            Object.keys(devices).forEach(deviceId => {
+                fetchHistoryData(deviceId);
+            });
         }
 
         function setTimeRange(hours) {
             currentTimeRange = hours;
             
-            // ボタンのアクティブ状態を更新
-            document.querySelectorAll('button').forEach(btn => btn.classList.remove('active'));
+            document.querySelectorAll('.controls button').forEach(btn => btn.classList.remove('active'));
             document.getElementById(`btn${hours}h` || `btn1w`).classList.add('active');
             
-            fetchHistoryData();
+            if (viewMode === 'all') {
+                fetchAllHistoryData();
+            } else if (selectedDeviceId) {
+                fetchHistoryData(selectedDeviceId);
+            }
+        }
+
+        function changeViewMode() {
+            viewMode = document.getElementById('viewMode').value;
+            const deviceSelector = document.getElementById('deviceSelector');
+            
+            if (viewMode === 'single') {
+                deviceSelector.style.display = 'inline';
+            } else {
+                deviceSelector.style.display = 'none';
+                showAllDevices();
+            }
+        }
+
+        function changeSelectedDevice() {
+            selectedDeviceId = document.getElementById('deviceSelector').value;
+            
+            if (viewMode === 'single') {
+                if (selectedDeviceId) {
+                    showSingleDevice(selectedDeviceId);
+                } else {
+                    showAllDevices();
+                }
+            }
+        }
+
+        function showAllDevices() {
+            Object.keys(devices).forEach(deviceId => {
+                const panel = document.getElementById(`panel-${deviceId}`);
+                if (panel) panel.style.display = 'block';
+            });
+        }
+
+        function showSingleDevice(deviceId) {
+            Object.keys(devices).forEach(id => {
+                const panel = document.getElementById(`panel-${id}`);
+                if (panel) {
+                    panel.style.display = (id === deviceId) ? 'block' : 'none';
+                }
+            });
         }
 
         function refreshData() {
-            fetchCurrentData();
-            fetchHistoryData();
+            fetchAllCurrentData();
+            if (viewMode === 'all') {
+                fetchAllHistoryData();
+            } else if (selectedDeviceId) {
+                fetchHistoryData(selectedDeviceId);
+            }
         }
 
         // 初期化
-        initChart();
-        refreshData();
-        
-        // 10秒ごとに現在のデータを更新
-        setInterval(fetchCurrentData, 10000);
-        
-        // 30秒ごとに履歴データを更新
-        setInterval(fetchHistoryData, 30000);
+        async function init() {
+            await fetchDevices();
+            refreshData();
+            
+            // 定期更新
+            setInterval(fetchAllCurrentData, 10000);  // 10秒ごとに現在データ更新
+            setInterval(() => {
+                if (viewMode === 'all') {
+                    fetchAllHistoryData();
+                } else if (selectedDeviceId) {
+                    fetchHistoryData(selectedDeviceId);
+                }
+            }, 30000);  // 30秒ごとに履歴データ更新
+        }
+
+        init();
     </script>
 </body>
 </html>

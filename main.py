@@ -91,6 +91,51 @@ async def get_power_history(device_id: str, hours: int = 24, limit: int = 1000):
         "readings": readings
     }
 
+@app.post("/power/collect/all")
+async def collect_all_power_data():
+    """Collect and store power data for all Plug Mini devices"""
+    if not switchbot_client:
+        raise HTTPException(status_code=500, detail="SwitchBot client not configured")
+    
+    devices = switchbot_client.get_devices()
+    if devices is None or "body" not in devices or "deviceList" not in devices["body"]:
+        raise HTTPException(status_code=500, detail="Failed to fetch devices")
+    
+    # Filter for Plug Mini devices only
+    plug_devices = [
+        device for device in devices["body"]["deviceList"] 
+        if device.get("deviceType", "").startswith("Plug Mini")
+    ]
+    
+    results = {}
+    success_count = 0
+    
+    for device in plug_devices:
+        device_id = device["deviceId"]
+        device_name = device["deviceName"]
+        
+        power_data = switchbot_client.get_plug_power_data(device_id)
+        if power_data:
+            success = storage.save_power_data(power_data)
+            results[device_id] = {
+                "name": device_name,
+                "success": success,
+                "data": power_data if success else None
+            }
+            if success:
+                success_count += 1
+        else:
+            results[device_id] = {
+                "name": device_name,
+                "success": False,
+                "error": "Failed to get power data"
+            }
+    
+    return {
+        "message": f"Collected data for {success_count}/{len(plug_devices)} devices",
+        "results": results
+    }
+
 @app.post("/power/collect/{device_id}")
 async def collect_power_data(device_id: str):
     """Manually collect and store power data for a device"""
@@ -123,6 +168,64 @@ async def get_latest_reading(device_id: str):
 async def dashboard(request: Request):
     """Dashboard UI for power monitoring"""
     return templates.TemplateResponse("dashboard.html", {"request": request})
+
+@app.get("/power/all/current")
+async def get_all_current_power():
+    """Get current power readings for all Plug Mini devices"""
+    if not switchbot_client:
+        raise HTTPException(status_code=500, detail="SwitchBot client not configured")
+    
+    devices = switchbot_client.get_devices()
+    if devices is None or "body" not in devices or "deviceList" not in devices["body"]:
+        raise HTTPException(status_code=500, detail="Failed to fetch devices")
+    
+    # Filter for Plug Mini devices only
+    plug_devices = [
+        device for device in devices["body"]["deviceList"] 
+        if device.get("deviceType", "").startswith("Plug Mini")
+    ]
+    
+    results = {}
+    for device in plug_devices:
+        device_id = device["deviceId"]
+        device_name = device["deviceName"]
+        power_data = switchbot_client.get_plug_power_data(device_id)
+        if power_data:
+            results[device_id] = {
+                "name": device_name,
+                "data": power_data
+            }
+    
+    return results
+
+@app.get("/power/all/latest")
+async def get_all_latest_readings():
+    """Get latest stored readings for all devices in database"""
+    if not switchbot_client:
+        raise HTTPException(status_code=500, detail="SwitchBot client not configured")
+    
+    devices = switchbot_client.get_devices()
+    if devices is None or "body" not in devices or "deviceList" not in devices["body"]:
+        raise HTTPException(status_code=500, detail="Failed to fetch devices")
+    
+    # Filter for Plug Mini devices only
+    plug_devices = [
+        device for device in devices["body"]["deviceList"] 
+        if device.get("deviceType", "").startswith("Plug Mini")
+    ]
+    
+    results = {}
+    for device in plug_devices:
+        device_id = device["deviceId"]
+        device_name = device["deviceName"]
+        latest = storage.get_latest_reading(device_id)
+        if latest:
+            results[device_id] = {
+                "name": device_name,
+                "data": latest
+            }
+    
+    return results
 
 @app.get("/health")
 async def health_check():
