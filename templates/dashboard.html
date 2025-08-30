@@ -441,7 +441,7 @@
         async function fetchDevices() {
             try {
                 // Get device list from database only (no SwitchBot API calls)
-                const dbResponse = await fetch('/power/db/current');
+                const dbResponse = await fetch('/power/db/latest');
                 const dbData = await dbResponse.json();
                 
                 if (Object.keys(dbData).length > 0) {
@@ -602,7 +602,7 @@
         async function fetchAllCurrentData() {
             try {
                 // Use database-only endpoint to avoid SwitchBot API calls
-                const response = await fetch('/power/db/current');
+                const response = await fetch('/power/db/latest');
                 const data = await response.json();
                 
                 

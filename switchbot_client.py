@@ -37,17 +37,6 @@ class SwitchBotClient:
             "nonce": nonce
         }
     
-    def get_devices(self) -> Optional[Dict]:
-        """Get list of all devices"""
-        try:
-            headers = self._get_headers()
-            response = requests.get(f"{self.base_url}/devices", headers=headers)
-            response.raise_for_status()
-            return response.json()
-        except requests.RequestException as e:
-            print(f"Error getting devices: {e}")
-            return None
-    
     def get_device_status(self, device_id: str) -> Optional[Dict]:
         """Get status of a specific device"""
         try:

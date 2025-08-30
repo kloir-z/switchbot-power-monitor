@@ -18,7 +18,6 @@ templates = Jinja2Templates(directory="templates")
 # Global variables for configuration
 switchbot_client: Optional[SwitchBotClient] = None
 storage = PowerDataStorage()
-DEVICE_ID = os.getenv("SWITCHBOT_DEVICE_ID", "")
 
 def init_switchbot_client():
     """Initialize SwitchBot client with environment variables"""
@@ -29,6 +28,13 @@ def init_switchbot_client():
         return None
     
     return SwitchBotClient(token, secret)
+
+def get_db_connection():
+    """Get database connection with row factory"""
+    import sqlite3
+    conn = sqlite3.connect(storage.db_path)
+    conn.row_factory = sqlite3.Row
+    return conn
 
 @app.on_event("startup")
 async def startup_event():
@@ -47,7 +53,7 @@ async def root():
         "endpoints": [
             "/power/history/{device_id} - Get power history from database",
             "/power/latest/{device_id} - Get latest stored reading",
-            "/power/db/current - Get current readings from database",
+            "/power/db/latest - Get current readings from database",
             "/database/stats - Get database statistics",
             "/dashboard - Web monitoring interface"
         ]
@@ -78,8 +84,7 @@ async def collect_all_power_data():
     
     # Get known device IDs from database instead of API
     try:
-        import sqlite3
-        conn = sqlite3.connect(storage.db_path)
+        conn = get_db_connection()
         cursor = conn.cursor()
         cursor.execute("SELECT DISTINCT device_id FROM power_readings WHERE device_id != 'all'")
         known_device_ids = [row[0] for row in cursor.fetchall()]
@@ -146,9 +151,7 @@ async def dashboard(request: Request):
 async def get_db_latest_readings():
     """Get latest stored readings from database only (no API calls)"""
     try:
-        import sqlite3
-        conn = sqlite3.connect(storage.db_path)
-        conn.row_factory = sqlite3.Row
+        conn = get_db_connection()
         cursor = conn.cursor()
         
         # Get latest reading for each device
@@ -175,24 +178,18 @@ async def get_db_latest_readings():
     except Exception as e:
         raise HTTPException(status_code=500, detail=f"Database error: {str(e)}")
 
-@app.get("/power/db/current")
-async def get_db_current_readings():
-    """Get current readings from database only (alias for latest)"""
-    return await get_db_latest_readings()
 
 @app.get("/database/stats")
 async def get_database_stats():
     """Get database statistics"""
     try:
-        import sqlite3
         import os
         
         db_path = storage.db_path
         if not os.path.exists(db_path):
             raise HTTPException(status_code=404, detail="Database file not found")
         
-        conn = sqlite3.connect(db_path)
-        conn.row_factory = sqlite3.Row
+        conn = get_db_connection()
         cursor = conn.cursor()
         
         # Get file size
@@ -266,10 +263,8 @@ async def export_all_data(hours: int = 24):
         from fastapi.responses import StreamingResponse
         import csv
         import io
-        import sqlite3
         
-        conn = sqlite3.connect(storage.db_path)
-        conn.row_factory = sqlite3.Row
+        conn = get_db_connection()
         cursor = conn.cursor()
         
         if hours > 0:
@@ -380,8 +375,7 @@ async def delete_device_data(device_id: str, confirm: bool = False):
         raise HTTPException(status_code=400, detail="Confirmation required. Add ?confirm=true to delete data.")
     
     try:
-        import sqlite3
-        conn = sqlite3.connect(storage.db_path)
+        conn = get_db_connection()
         cursor = conn.cursor()
         
         # Get count before deletion
@@ -416,8 +410,7 @@ async def delete_old_data(minutes: int = 1440, confirm: bool = False):
         raise HTTPException(status_code=400, detail="Minutes must be at least 1")
     
     try:
-        import sqlite3
-        conn = sqlite3.connect(storage.db_path)
+        conn = get_db_connection()
         cursor = conn.cursor()
         
         # Calculate cutoff timestamp
