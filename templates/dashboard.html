@@ -507,18 +507,6 @@
                             <h3>消費電力</h3>
                             <div class="value" id="power-${device.id}">--W</div>
                         </div>
-                        <div class="stat-card">
-                            <h3>電圧</h3>
-                            <div class="value" id="voltage-${device.id}">--V</div>
-                        </div>
-                        <div class="stat-card">
-                            <h3>電流</h3>
-                            <div class="value" id="current-${device.id}">--mA</div>
-                        </div>
-                        <div class="stat-card">
-                            <h3>本日消費</h3>
-                            <div class="value" id="daily-${device.id}">--Wh</div>
-                        </div>
                     </div>
                     <div class="chart-container">
                         <canvas id="chart-${device.id}"></canvas>
@@ -547,11 +535,8 @@
                             borderWidth: 2,
                             fill: true,
                             tension: 0.1,
-                            pointRadius: 2,
-                            pointHoverRadius: 4,
-                            pointBackgroundColor: getDeviceColor(device.id),
-                            pointBorderColor: '#ffffff',
-                            pointBorderWidth: 1
+                            pointRadius: 0,
+                            pointHoverRadius: 4
                         }]
                     },
                     options: {
@@ -615,9 +600,6 @@
                         const daily = deviceData.electricity_of_day || 0;
                         
                         document.getElementById(`power-${deviceId}`).textContent = power + 'W';
-                        document.getElementById(`voltage-${deviceId}`).textContent = voltage + 'V';
-                        document.getElementById(`current-${deviceId}`).textContent = current + 'mA';
-                        document.getElementById(`daily-${deviceId}`).textContent = daily + 'Wh';
                         
                         // デバイスの状態をパネルに表示
                         const panel = document.getElementById(`panel-${deviceId}`);
@@ -631,9 +613,6 @@
                         }
                     } else {
                         document.getElementById(`power-${deviceId}`).textContent = '--W';
-                        document.getElementById(`voltage-${deviceId}`).textContent = '--V';
-                        document.getElementById(`current-${deviceId}`).textContent = '--mA';
-                        document.getElementById(`daily-${deviceId}`).textContent = '--Wh';
                         
                         // エラー状態を表示
                         const panel = document.getElementById(`panel-${deviceId}`);
@@ -652,9 +631,6 @@
                 // Set all devices to error state
                 Object.keys(devices).forEach(deviceId => {
                     document.getElementById(`power-${deviceId}`).textContent = '--W';
-                    document.getElementById(`voltage-${deviceId}`).textContent = '--V';
-                    document.getElementById(`current-${deviceId}`).textContent = '--mA';
-                    document.getElementById(`daily-${deviceId}`).textContent = '--Wh';
                     
                     const panel = document.getElementById(`panel-${deviceId}`);
                     if (panel) {
