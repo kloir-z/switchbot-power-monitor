@@ -130,6 +130,34 @@
         button.active {
             background: #28a745;
         }
+        button.loading {
+            background: #6c757d;
+            cursor: not-allowed;
+            opacity: 0.6;
+        }
+        button.loading:hover {
+            background: #6c757d;
+        }
+        .loading-text {
+            display: inline-block;
+        }
+        .loading-spinner {
+            display: none;
+            width: 12px;
+            height: 12px;
+            border: 2px solid #ffffff;
+            border-top: 2px solid transparent;
+            border-radius: 50%;
+            animation: spin 1s linear infinite;
+            margin-right: 5px;
+        }
+        button.loading .loading-spinner {
+            display: inline-block;
+        }
+        @keyframes spin {
+            0% { transform: rotate(0deg); }
+            100% { transform: rotate(360deg); }
+        }
         .device-1 { border-color: #007bff; }
         .device-1 .stat-card { background: #007bff; }
         .device-2 { border-color: #28a745; }
@@ -338,11 +366,11 @@
 
 
         <div class="controls">
-            <button onclick="setTimeRange(1)" id="btn1h">1時間</button>
-            <button onclick="setTimeRange(6)" id="btn6h">6時間</button>
-            <button onclick="setTimeRange(24)" id="btn24h" class="active">24時間</button>
-            <button onclick="setTimeRange(168)" id="btn1w">1週間</button>
-            <button onclick="refreshData()">更新</button>
+            <button onclick="setTimeRange(1)" id="btn1h"><span class="loading-spinner"></span><span class="loading-text">1時間</span></button>
+            <button onclick="setTimeRange(6)" id="btn6h"><span class="loading-spinner"></span><span class="loading-text">6時間</span></button>
+            <button onclick="setTimeRange(24)" id="btn24h" class="active"><span class="loading-spinner"></span><span class="loading-text">24時間</span></button>
+            <button onclick="setTimeRange(168)" id="btn1w"><span class="loading-spinner"></span><span class="loading-text">1週間</span></button>
+            <button onclick="refreshData()" id="btnRefresh"><span class="loading-spinner"></span><span class="loading-text">更新</span></button>
         </div>
 
         <div id="deviceGrid" class="device-grid">
@@ -682,22 +710,58 @@
             }
         }
 
+        // Loading state management functions
+        function setButtonLoading(buttonId, loading = true) {
+            const button = document.getElementById(buttonId);
+            if (button) {
+                if (loading) {
+                    button.classList.add('loading');
+                    button.disabled = true;
+                } else {
+                    button.classList.remove('loading');
+                    button.disabled = false;
+                }
+            }
+        }
+
+        function setAllTimeButtonsLoading(loading = true) {
+            ['btn1h', 'btn6h', 'btn24h', 'btn1w'].forEach(btnId => {
+                setButtonLoading(btnId, loading);
+            });
+        }
+
         function fetchAllHistoryData() {
             Object.keys(devices).forEach(deviceId => {
                 fetchHistoryData(deviceId);
             });
         }
 
-        function setTimeRange(hours) {
+        async function fetchAllHistoryDataAsync() {
+            const promises = Object.keys(devices).map(deviceId => {
+                return fetchHistoryData(deviceId);
+            });
+            await Promise.all(promises);
+        }
+
+        async function setTimeRange(hours) {
             currentTimeRange = hours;
             
-            document.querySelectorAll('.controls button').forEach(btn => btn.classList.remove('active'));
-            document.getElementById(`btn${hours}h` || `btn1w`).classList.add('active');
+            // Set loading state
+            setAllTimeButtonsLoading(true);
             
-            if (viewMode === 'all') {
-                fetchAllHistoryData();
-            } else if (selectedDeviceId) {
-                fetchHistoryData(selectedDeviceId);
+            document.querySelectorAll('.controls button').forEach(btn => btn.classList.remove('active'));
+            const btnId = hours === 168 ? 'btn1w' : `btn${hours}h`;
+            document.getElementById(btnId).classList.add('active');
+            
+            try {
+                if (viewMode === 'all') {
+                    await fetchAllHistoryDataAsync();
+                } else if (selectedDeviceId) {
+                    await fetchHistoryData(selectedDeviceId);
+                }
+            } finally {
+                // Remove loading state
+                setAllTimeButtonsLoading(false);
             }
         }
 
@@ -741,12 +805,20 @@
             });
         }
 
-        function refreshData() {
-            fetchAllCurrentData();
-            if (viewMode === 'all') {
-                fetchAllHistoryData();
-            } else if (selectedDeviceId) {
-                fetchHistoryData(selectedDeviceId);
+        async function refreshData() {
+            // Set loading state for refresh button
+            setButtonLoading('btnRefresh', true);
+            
+            try {
+                fetchAllCurrentData();
+                if (viewMode === 'all') {
+                    await fetchAllHistoryDataAsync();
+                } else if (selectedDeviceId) {
+                    await fetchHistoryData(selectedDeviceId);
+                }
+            } finally {
+                // Remove loading state
+                setButtonLoading('btnRefresh', false);
             }
         }
 
